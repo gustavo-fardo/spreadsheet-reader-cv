@@ -58,4 +58,4 @@ def skew_corrector(src: cv2.Mat, radon_res= 300,angle_width = 90,angle_offset = 
     img_blur = radon.rotate_image(src,angle)
     img_blur = img_blur[u:d,l:r]
 
-    return img_blur, radon_saida, img_background
+    return img_blur, radon_saida
