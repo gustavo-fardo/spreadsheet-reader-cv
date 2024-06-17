@@ -1,7 +1,7 @@
 
 import cv2
 import page_skew_corrector
-input_image = 'im3.jpg'
+input_image = '1.bmp'
 
 img = cv2.imread(input_image,cv2.IMREAD_COLOR)
 out,radon,bin = page_skew_corrector.skew_corrector(img)
