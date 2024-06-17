@@ -17,14 +17,16 @@ sys.setrecursionlimit(10**6)
 
 #===============================================================================
 
-INPUT_IMAGE =  'out-scaled-down.png'
+INPUT_IMAGE =  'radon/3.png'
 KSIZE_ADAPTIVE_THRESHOLD = 21
 C_ADAPTIVE_THRESHOLD = 10
-ALT_ENTRE_LINHAS = 5
 KERNEL_EROSAO = (7, 7)
 KERNEL_DILATACAO = (7, 7)
+HOUGH_THRESHOLD = 200
 KERNEL_EROSAO_HORIZONTAL = (2, 5)
-MARGIN_ANGLES = 5
+MAX_LINE_DIST = 20
+ALT_ENTRE_LINHAS = 5
+MARGIN_ANGLES = 1
 PAD_SIZE = 50
 
 def floodFill(img, y, x, componente, shape):
@@ -82,6 +84,35 @@ def linhasPorEspaco(img):
                     pontos.append([((curr_border[2]-last_border[2])//2)+last_border[2], y])
     return pontos
 
+def reduz_linhas_1d(ponto, indice, max_line_dist):
+    ponto.sort()
+    i_ant = ponto[0]
+    ponto_prox = [ponto[0]]
+    ponto_out = []
+    for i in range(1, len(ponto)):
+        if ponto[i][indice] - i_ant[indice] < max_line_dist:
+            ponto_prox.append(ponto[i])
+        else:
+            ponto_out.append(min(ponto_prox, key=lambda x: abs(x[indice] - np.median(ponto_prox[0][indice]))))
+            ponto_prox = [ponto[i]]
+        i_ant = ponto[i]
+    ponto_out.append(min(ponto_prox, key=lambda x: abs(x[indice] - np.median(ponto_prox[0][indice]))))
+    return ponto_out
+
+def reduz_linhas(linhas, eixo, max_line_dist):
+    if eixo == "vertical":
+        indice = 0
+    elif eixo == "horizontal":
+        indice = 1
+    else:
+        print("eixo errado")
+        return
+    ext1 = [coord[0] for coord in linhas]
+    ext2 = [coord[1] for coord in linhas]
+    ext1 = reduz_linhas_1d(ext1, indice, max_line_dist)
+    ext2 = reduz_linhas_1d(ext2, indice, max_line_dist)
+    return list(zip(ext1, ext2))
+        
 def main ():
     # Abre a imagem em escala de cinza.
     img_or = cv2.imread (INPUT_IMAGE, cv2.IMREAD_COLOR)
@@ -111,45 +142,74 @@ def main ():
     cv2.imwrite ('_1-preprocessada.png', preproc*255)
 
     # Canny
-    canny = (preproc).astype(np.uint8)*255
+    canny = (1-preproc).astype(np.uint8)*255
     canny = cv2.Canny(canny, 50, 150, apertureSize=3)
     cv2.imwrite ('_2-canny.png', canny)
 
     # Linhas Hough Infinitas
     canvas1 = np.zeros((height, width), dtype=np.uint8)
-    lines = cv2.HoughLines(canny, 1, np.pi/180, 300)
+    vertical_lines = []
+    horizontal_lines = []
+    lines = cv2.HoughLines(canny, 1, np.pi/180, HOUGH_THRESHOLD)
     if lines is not None:
         for i in range(0, len(lines)):
             rho = lines[i][0][0]
             theta = lines[i][0][1]
             angle = theta * 180 / np.pi
-            if abs(angle) < MARGIN_ANGLES or abs(angle-90) < MARGIN_ANGLES or abs(angle - 180) < MARGIN_ANGLES or abs(angle - 270) < MARGIN_ANGLES:
+            if abs(angle) < MARGIN_ANGLES or abs(angle - 180) < MARGIN_ANGLES:
                 a = math.cos(theta)
                 b = math.sin(theta)
                 x0 = a * rho
                 y0 = b * rho
                 pt1 = (int(x0 + width*(-b)), int(y0 + height*(a)))
                 pt2 = (int(x0 - width*(-b)), int(y0 - height*(a)))
-                cv2.line(canvas1, pt1, pt2, (255,0,0), 3, cv2.LINE_AA)
+                vertical_lines.append((pt1, pt2))
+            if abs(angle - 90) < MARGIN_ANGLES or abs(angle - 270) < MARGIN_ANGLES:
+                a = math.cos(theta)
+                b = math.sin(theta)
+                x0 = a * rho
+                y0 = b * rho
+                pt1 = (int(x0 + width*(-b)), int(y0 + height*(a)))
+                pt2 = (int(x0 - width*(-b)), int(y0 - height*(a)))
+                horizontal_lines.append((pt1, pt2))
+
+    if vertical_lines != []:
+        vertical_lines = reduz_linhas(vertical_lines, "vertical", MAX_LINE_DIST)
+    for points in vertical_lines:
+            # x = abs(points[0][1] - points[1][1])
+            # h = math.sqrt(x**2 + (points[0][0] - points[1][0])**2)
+            # angle = math.acos(x/h) * 180 / np.pi
+            # if abs(angle) < MARGIN_ANGLES or abs(angle - 180) < MARGIN_ANGLES:
+        cv2.line(canvas1, points[0], points[1], (255,0,0), 1, cv2.LINE_AA)
+
+    if horizontal_lines != []:
+        horizontal_lines = reduz_linhas(horizontal_lines, "horizontal", MAX_LINE_DIST)
+    for points in horizontal_lines:
+    #         x = abs(points[0][1] - points[1][1])
+    #         h = math.sqrt(x**2 + (points[0][0] - points[1][0])**2)
+    #         angle = math.acos(x/h) * 180 / np.pi
+    #         if abs(angle - 90) < MARGIN_ANGLES or abs(angle - 270) < MARGIN_ANGLES:
+        cv2.line(canvas1, points[0], points[1], (255,0,0), 1, cv2.LINE_AA)
+                
     canvas1 = cv2.dilate(canvas1, kernel_dilatacao, iterations=1)
 
-    # Linhas Hough Finitas
+    # # Linhas Hough Finitas
     canvas2 = np.zeros((height, width), dtype=np.uint8)
-    lines = cv2.HoughLinesP(
-            canny, # Input edge image
-            1, # Distance resolution in pixels
-            np.pi/180, # Angle resolution in radians
-            threshold=300, # Min number of votes for valid line
-            minLineLength=width//1000+2, # Min allowed length of line
-            maxLineGap=width//2 # Max allowed gap between line for joining them
-            )
-    for points in lines:
-        x1,y1,x2,y2=points[0]
-        cv2.line(canvas2,(x1,y1),(x2,y2),(255,255,255),2)
+    # lines = cv2.HoughLinesP(
+    #         canny, # Input edge image
+    #         1, # Distance resolution in pixels
+    #         np.pi/180, # Angle resolution in radians
+    #         threshold=HOUGH_THRESHOLD, # Min number of votes for valid line
+    #         minLineLength=width//1000+2, # Min allowed length of line
+    #         maxLineGap=width//2 # Max allowed gap between line for joining them
+    #         )
+    # for points in lines:
+    #     x1,y1,x2,y2=points[0]
+    #     cv2.line(canvas2,(x1,y1),(x2,y2),(255,255,255),2)
     canvas2 = cv2.dilate(canvas2, kernel_dilatacao, iterations=1)
     
     # Linhas detectadas
-    det_lines = canvas1 & canvas2
+    det_lines = canvas1 #& canvas2
     det_lines = cv2.erode(det_lines, kernel_erosao, iterations=1)
     condition = det_lines > 0.5
     cv2.imwrite ('_3.1-canvas.png', canvas1)

@@ -1,11 +1,11 @@
 
 import cv2
 import page_skew_corrector
-input_image = '1.bmp'
+input_image = 'amostras/3.jpg'
 
 img = cv2.imread(input_image,cv2.IMREAD_COLOR)
 out,radon,bin = page_skew_corrector.skew_corrector(img)
 
-cv2.imwrite("out.png",out)
-cv2.imwrite("radon.png",radon)
-cv2.imwrite("bin.png",bin)
+cv2.imwrite("_0.1-corrected_out.png",out)
+cv2.imwrite("_0.2-radon.png",radon*255)
+cv2.imwrite("_0.3-bin.png",bin*255)
