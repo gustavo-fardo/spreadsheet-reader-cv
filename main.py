@@ -17,7 +17,7 @@ sys.setrecursionlimit(10**6)
 
 #===============================================================================
 
-INPUT_IMAGE =  './radon/3.png'
+INPUT_IMAGE =  './radon/6.png'
 # Preprocessamento
 KSIZE_ADAPTIVE_THRESHOLD = 21
 C_ADAPTIVE_THRESHOLD = 10
@@ -32,8 +32,8 @@ PHOUGH_THRESHOLD = 200
 KERNEL_EROSAO_HORIZONTAL = (5, 25)
 KERNEL_DILATACAO_VERTICAL = (5, 1)
 LINE_REPLACE_VALUE = 2 # De preferencia, menor que 0 ou maior que 1, nunca igual a 0 ou 1
-MAX_X_DIST = 20
-MAX_Y_DIST = 5
+MAX_X_DIST = 10
+MAX_Y_DIST = 3
 MIN_SUPPORT_INV_LINE = 200
 #
 ALT_ENTRE_LINHAS = 5
@@ -223,6 +223,71 @@ def encontra_linhas_invisiveis(blob_img, draw_img, height, width):
 
     return det_inv_lines, draw_img
 
+    #-------------------------------------------------------------------------------
+
+def floodFill(img, y, x, componente, shape):
+    pilha = []
+    topo = 0
+    pilha.append(y, x)
+    topo += 1
+    while(topo > 0):
+        #print(img[y][x])
+        y, x = pilha[topo]
+        topo -= 1
+        if not(y in range(shape[0]) and x in range(shape[1])) or img[y][x] >= LINE_REPLACE_VALUE:
+            continue
+        componente["L"] = x if x < componente["L"] else componente["L"] 
+        componente["R"] = x if x > componente["R"] else componente["R"] 
+        componente["T"] = y if y > componente["T"] else componente["T"] 
+        componente["B"] = y if y < componente["B"] else componente["B"] 
+        pilha[topo] = (y + 1, x)
+        topo += 1
+        pilha[topo] = (y, x + 1)
+        topo += 1
+        pilha[topo] = (y - 1, x)
+        topo += 1
+        pilha[topo] = (y, x - 1)
+        topo += 1
+
+#-------------------------------------------------------------------------------
+
+def rotula (img):
+    '''Rotulagem usando flood fill. Marca os objetos da imagem com os valores
+    [0.1,0.2,etc].
+
+    Parâmetros: img: imagem de entrada E saída.
+                largura_min: descarta componentes com largura menor que esta.
+                altura_min: descarta componentes com altura menor que esta.
+                n_pixels_min: descarta componentes com menos pixels que isso.
+
+    Valor de retorno: uma lista, onde cada item é um vetor associativo (dictionary)
+    com os seguintes campos:
+
+    'label': rótulo do componente.
+    'n_pixels': número de pixels do componente.
+    'T', 'L', 'B', 'R': coordenadas do retângulo envolvente de um componente conexo,
+    respectivamente: topo, esquerda, baixo e direita.'''
+
+    componentes = []
+    label_atual = LINE_REPLACE_VALUE + 1
+    shape = np.shape(img)
+    i_atual = j_atual = 0
+    comps_linha = 0
+    for y in range(shape[0]):
+        for x in range(shape[1]):
+            if(y == 3 and x == 0):
+                 comps_linha = label_atual - LINE_REPLACE_VALUE - 1
+            if(comps_linha):
+                 i_atual = math.floor((label_atual - LINE_REPLACE_VALUE - 1)/comps_linha)
+                 j_atual = (label_atual - LINE_REPLACE_VALUE - 1) % comps_linha
+            if(img[y][x] != LINE_REPLACE_VALUE):
+                componente = {"label": label_atual, "label_i": i_atual,"label_j": j_atual, "T": 0, "B": shape[0], "L": shape[1], "R": 0}
+                floodFill(img, y, x, componente, shape)
+                componentes.append(componente)
+                label_atual += 1
+                j_atual += 1
+    return componentes
+
 def main ():
     # Abre a imagem em escala de cinza.
     img_or = cv2.imread (INPUT_IMAGE, cv2.IMREAD_COLOR)
@@ -267,7 +332,8 @@ def main ():
 
     # # Separa componentes
     # erosao_horizontal = c
-    # componentes = contaComponentes(img)
+    componentes = rotula(all_lines)
+    print(componentes)
     # tabela = []
     # height_line = -ALT_ENTRE_LINHAS
     # row = []
