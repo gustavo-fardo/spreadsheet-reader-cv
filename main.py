@@ -17,7 +17,7 @@ sys.setrecursionlimit(10**6)
 
 #===============================================================================
 
-INPUT_IMAGE =  './radon/1.png'
+INPUT_IMAGE =  './radon/3.png'
 # Preprocessamento
 KSIZE_ADAPTIVE_THRESHOLD = 21
 C_ADAPTIVE_THRESHOLD = 10
