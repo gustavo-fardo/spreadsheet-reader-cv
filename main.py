@@ -228,26 +228,24 @@ def encontra_linhas_invisiveis(blob_img, draw_img, height, width):
 def floodFill(img, y, x, componente, shape):
     pilha = []
     topo = 0
-    pilha.append(y, x)
+    pilha.append((y, x))
     topo += 1
-    while(topo > 0):
-        #print(img[y][x])
-        y, x = pilha[topo]
-        topo -= 1
+    while(len(pilha) > 0):
+        y, x = pilha[len(pilha) - 1]
+        pilha.pop()
+
         if not(y in range(shape[0]) and x in range(shape[1])) or img[y][x] >= LINE_REPLACE_VALUE:
             continue
+        img[y][x] = componente["label"]
+        componente["n_pixels"] += 1
         componente["L"] = x if x < componente["L"] else componente["L"] 
         componente["R"] = x if x > componente["R"] else componente["R"] 
         componente["T"] = y if y > componente["T"] else componente["T"] 
         componente["B"] = y if y < componente["B"] else componente["B"] 
-        pilha[topo] = (y + 1, x)
-        topo += 1
-        pilha[topo] = (y, x + 1)
-        topo += 1
-        pilha[topo] = (y - 1, x)
-        topo += 1
-        pilha[topo] = (y, x - 1)
-        topo += 1
+        pilha.append((y + 1, x))
+        pilha.append((y, x + 1))
+        pilha.append((y - 1, x))
+        pilha.append((y, x - 1))
 
 #-------------------------------------------------------------------------------
 
@@ -281,11 +279,12 @@ def rotula (img):
                  i_atual = math.floor((label_atual - LINE_REPLACE_VALUE - 1)/comps_linha)
                  j_atual = (label_atual - LINE_REPLACE_VALUE - 1) % comps_linha
             if(img[y][x] != LINE_REPLACE_VALUE):
-                componente = {"label": label_atual, "label_i": i_atual,"label_j": j_atual, "T": 0, "B": shape[0], "L": shape[1], "R": 0}
+                componente = {"n_pixels": 0, "label": label_atual, "label_i": i_atual,"label_j": j_atual, "T": 0, "B": shape[0], "L": shape[1], "R": 0}
                 floodFill(img, y, x, componente, shape)
-                componentes.append(componente)
-                label_atual += 1
-                j_atual += 1
+                if(componente["n_pixels"] > 10):
+                    componentes.append(componente)
+                    label_atual += 1
+                    j_atual += 1
     return componentes
 
 def main ():
