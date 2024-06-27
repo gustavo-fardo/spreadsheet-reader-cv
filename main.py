@@ -11,49 +11,51 @@ import cv2
 import math
 import csv
 import pytesseract
+import page_skew_corrector
 
 # increase the recursion limit for floodfill
 sys.setrecursionlimit(10**6)
 
 #===============================================================================
 
-INPUT_IMAGE =  './radon/6.png'
+INPUT_IMAGE =  './radon/3.png'
+# INPUT_IMAGE =  './amostras/3.jpg'
+SKIP_RADON = True
 # Preprocessamento
 KSIZE_ADAPTIVE_THRESHOLD = 21
 C_ADAPTIVE_THRESHOLD = 10
 KERNEL_EROSAO = (7, 7)
 KERNEL_DILATACAO = (7, 7)
-# Deteccao de linhas
+# Deteccao de linhas desenhadas
 HOUGH_THRESHOLD = 200
 MAX_LINE_DIST = 20
 MARGIN_ANGLES = 1
-# Regressao de linhas invisiveis
+# Regressao de linhas nao desenhadas
 PHOUGH_THRESHOLD = 200
 KERNEL_EROSAO_HORIZONTAL = (5, 25)
 KERNEL_DILATACAO_VERTICAL = (5, 1)
-LINE_REPLACE_VALUE = 2 # De preferencia, menor que 0 ou maior que 1, nunca igual a 0 ou 1
+LINE_REPLACE_VALUE = 2 # Sempre maior que 1
 MAX_X_DIST = 10
 MAX_Y_DIST = 3
 MIN_SUPPORT_INV_LINE = 200
-#
-ALT_ENTRE_LINHAS = 5
-PAD_SIZE = 50
+# Leitura de células
+PAD_SIZE = 5
 
 def prepocessamento(img_or):
     # Binarizacao 
-    img_bin = cv2.adaptiveThreshold(img_or, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, KSIZE_ADAPTIVE_THRESHOLD, C_ADAPTIVE_THRESHOLD)
+    img_bin_or = cv2.adaptiveThreshold(img_or, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, KSIZE_ADAPTIVE_THRESHOLD, C_ADAPTIVE_THRESHOLD)
    
     # Converte para float
-    img_bin = img_bin.reshape ((img_bin.shape [0], img_bin.shape [1], 1))
+    img_bin = img_bin_or.reshape ((img_bin_or.shape [0], img_bin_or.shape [1], 1))
     img_bin = img_bin.astype (np.float32)/255
 
     # Fechamento
     kernel_erosao = np.ones(KERNEL_EROSAO, np.uint8) 
     img_fechamento = cv2.erode(img_bin, kernel_erosao, iterations=1)
     kernel_dilatacao = np.ones(KERNEL_DILATACAO, np.uint8) 
-    preproc= cv2.dilate(img_fechamento, kernel_dilatacao, iterations=1)
+    preproc = cv2.dilate(img_fechamento, kernel_dilatacao, iterations=1)
 
-    return preproc
+    return img_bin_or, preproc
 
 def reduz_linhas(lines, max_line_dist):
     lines.sort()
@@ -96,7 +98,7 @@ def encontra_linhas_desenhadas(canny, draw_img, width, height):
         y0 = b * rho
         pt1 = (int(x0 + width*(-b)), int(y0 + height*(a)))
         pt2 = (int(x0 - width*(-b)), int(y0 - height*(a)))
-        cv2.line(det_lines, pt1, pt2, (255,0,0), 1, cv2.LINE_AA)
+        cv2.line(det_lines, pt1, pt2, (255,0,0), 1)
 
     if horizontal_lines != []:
         horizontal_lines = reduz_linhas(horizontal_lines, MAX_LINE_DIST)
@@ -107,7 +109,7 @@ def encontra_linhas_desenhadas(canny, draw_img, width, height):
         y0 = b * rho
         pt1 = (int(x0 + width*(-b)), int(y0 + height*(a)))
         pt2 = (int(x0 - width*(-b)), int(y0 - height*(a)))
-        cv2.line(det_lines, pt1, pt2, (255,0,0), 1, cv2.LINE_AA)
+        cv2.line(det_lines, pt1, pt2, (255,0,0), 1)
 
     # Desenha imagem de saída com as linhas detectadas
     condition = det_lines > 0.5
@@ -206,8 +208,8 @@ def encontra_linhas_invisiveis(blob_img, draw_img, height, width):
     for p in pontos_linhas_vert:
         cv2.circle(draw_img, p, radius=0, color=(0, 255, 0), thickness=-1)
     for x in linhas_inv_vert:
-        cv2.line(draw_img,(x,0),(x, height),(0,0,255),2)
-        cv2.line(det_inv_lines,(x,0),(x, height),255,2)
+        cv2.line(draw_img,(x,0),(x, height),(0,0,255),1)
+        cv2.line(det_inv_lines,(x,0),(x, height),255,1)
 
     # Horizontais
     pontos_linhas_hor = linhasPorEspacoHor(blob_img)
@@ -216,8 +218,8 @@ def encontra_linhas_invisiveis(blob_img, draw_img, height, width):
     for p in pontos_linhas_hor:
         cv2.circle(draw_img, p, radius=0, color=(0, 255, 0), thickness=-1)
     for y in linhas_inv_hor:
-        cv2.line(draw_img,(0, y),(width, y),(0,0,255),2)
-        cv2.line(det_inv_lines,(0, y),(width, y),255,2)
+        cv2.line(draw_img, (0, y), (width, y), (0,0,255), 1)
+        cv2.line(det_inv_lines, (0, y), (width, y), 255, 1)
 
     det_inv_lines = np.where(det_inv_lines >= 255, 1, 0)
 
@@ -233,7 +235,6 @@ def floodFill(img, y, x, componente, shape):
     while(len(pilha) > 0):
         y, x = pilha[len(pilha) - 1]
         pilha.pop()
-
         if not(y in range(shape[0]) and x in range(shape[1])) or img[y][x] >= LINE_REPLACE_VALUE:
             continue
         img[y][x] = componente["label"]
@@ -250,23 +251,9 @@ def floodFill(img, y, x, componente, shape):
 #-------------------------------------------------------------------------------
 
 def rotula (img):
-    '''Rotulagem usando flood fill. Marca os objetos da imagem com os valores
-    [0.1,0.2,etc].
-
-    Parâmetros: img: imagem de entrada E saída.
-                largura_min: descarta componentes com largura menor que esta.
-                altura_min: descarta componentes com altura menor que esta.
-                n_pixels_min: descarta componentes com menos pixels que isso.
-
-    Valor de retorno: uma lista, onde cada item é um vetor associativo (dictionary)
-    com os seguintes campos:
-
-    'label': rótulo do componente.
-    'n_pixels': número de pixels do componente.
-    'T', 'L', 'B', 'R': coordenadas do retângulo envolvente de um componente conexo,
-    respectivamente: topo, esquerda, baixo e direita.'''
-
     componentes = []
+    num_cols = 0
+    num_lins = 0
     label_atual = LINE_REPLACE_VALUE + 1
     shape = np.shape(img)
     i_atual = j_atual = 0
@@ -274,40 +261,59 @@ def rotula (img):
     for y in range(shape[0]):
         for x in range(shape[1]):
             if(y == 3 and x == 0):
-                 comps_linha = label_atual - LINE_REPLACE_VALUE - 1
+                comps_linha = label_atual - LINE_REPLACE_VALUE - 1
             if(comps_linha):
-                 i_atual = math.floor((label_atual - LINE_REPLACE_VALUE - 1)/comps_linha)
-                 j_atual = (label_atual - LINE_REPLACE_VALUE - 1) % comps_linha
+                i_atual = math.floor((label_atual - LINE_REPLACE_VALUE - 1)/comps_linha)
+                j_atual = (label_atual - LINE_REPLACE_VALUE - 1) % comps_linha
             if(img[y][x] != LINE_REPLACE_VALUE):
                 componente = {"n_pixels": 0, "label": label_atual, "label_i": i_atual,"label_j": j_atual, "T": 0, "B": shape[0], "L": shape[1], "R": 0}
                 floodFill(img, y, x, componente, shape)
-                if(componente["n_pixels"] > 10):
+                if(componente["n_pixels"] > 0):
+                    if(componente["label_j"] > num_cols):
+                        num_cols = componente["label_j"]
+                    if(componente["label_i"] > num_lins):
+                        num_lins = componente["label_i"]
                     componentes.append(componente)
                     label_atual += 1
                     j_atual += 1
-    return componentes
+    return num_lins+1, num_cols+1, componentes
 
 def main ():
+    print("============== SPREADSHEET READER ==============")
     # Abre a imagem em escala de cinza.
     img_or = cv2.imread (INPUT_IMAGE, cv2.IMREAD_COLOR)
     if img_or is None:
         print ('Erro abrindo a imagem.\n')
         sys.exit ()
-    height, width = img_or.shape[0], img_or.shape[1]
-    draw_img = img_or.copy()
-    img_or = cv2.cvtColor(img_or, cv2.COLOR_BGR2GRAY)
 
-    preproc = prepocessamento(img_or)
+    if(not(SKIP_RADON)):
+        # Ajusta foto da tabela com radon
+        print("=> Ajustando alinhamento e bordas do papel")
+        img_or,radon,bin = page_skew_corrector.skew_corrector(img_or, percentage_cut=0.15)
+        cv2.imwrite("_0.1-corrected_out.png",img_or*255)
+        cv2.imwrite("_0.2-radon.png",radon*255)
+        cv2.imwrite("_0.3-bin.png",bin*255)
+
+    # Preprocessa imagens
+    height, width = img_or.shape[0], img_or.shape[1]
+    draw_img_lines = img_or.copy()
+    draw_img_components = img_or.copy()
+    img_or = cv2.cvtColor(img_or, cv2.COLOR_BGR2GRAY)
+    print("=> Preprocessando...")
+    img_bin, preproc = prepocessamento(img_or)
     cv2.imwrite ('_1-preprocessada.png', preproc*255)
 
+    print("=> Encontrando linhas desenhadas...")
     # Canny
     canny = (1-preproc).astype(np.uint8)*255
     canny = cv2.Canny(canny, 50, 150, apertureSize=3)
     cv2.imwrite ('_2-canny.png', canny)
 
-    # Encontra inhas desenhadas
-    det_lines, draw_img = encontra_linhas_desenhadas(canny, draw_img, width, height)
+    # Encontra linhas desenhadas
+    det_lines, draw_img_lines = encontra_linhas_desenhadas(canny, draw_img_lines, width, height)
     cv2.imwrite ('_3-linhas_detectadas.png', det_lines)
+
+    print("=> Encontrando linhas não-desenhadas...")
 
     # Gera a imagem de blobs
     removed_lines = remove_linhas_desenhadas(canny, preproc, height, width)
@@ -318,52 +324,50 @@ def main ():
 
     cv2.imwrite ('_4-linhas_removidas.png', blob_img*255)
 
+    # Marca linhas encontradas na imagem de blobs para reduzir falsos positivos
     blob_img = np.where(det_lines > 0.5, LINE_REPLACE_VALUE, blob_img)
     
     # Encontra linhas invisiveis
-    det_inv_lines, draw_img = encontra_linhas_invisiveis(blob_img, draw_img, height, width)
+    det_inv_lines, draw_img_lines = encontra_linhas_invisiveis(blob_img, draw_img_lines, height, width)
 
     cv2.imwrite ('_5-linhas_invisiveis_detectadas.png', det_inv_lines*255)
 
+    print("=> Combinando linhas...")
+
     # Combina todas as linhas detectadas
     all_lines = det_lines | det_inv_lines
+    all_lines = np.where(all_lines > 0.5, LINE_REPLACE_VALUE, 0)
     cv2.imwrite ('_6_linhas_totais_detectadas.png', all_lines*255)
+    cv2.imwrite ('_7-linhas_sobrepostas.png', draw_img_lines)
 
-    # # Separa componentes
-    # erosao_horizontal = c
-    componentes = rotula(all_lines)
-    print(componentes)
-    # tabela = []
-    # height_line = -ALT_ENTRE_LINHAS
-    # row = []
+    print("=> Separando células da tabela em linhas e colunas...")
 
-    # # Arranja componentes na estrutura da tabela
-    # for c in componentes:
-    #     crop = img_or[c['B']:c['T'], c['L']:c['R']]
-    #     crop = np.pad(crop, ((PAD_SIZE, PAD_SIZE), (PAD_SIZE, PAD_SIZE)), mode='constant', constant_values=255)
-    #     text = pytesseract.image_to_string(crop)
-    #     text = ''.join(ch for ch in text if ch.isprintable())
-    #     y_comp_middle = (c['T']-c['B'])//2+c['B']
-    #     if(y_comp_middle < (height_line + ALT_ENTRE_LINHAS) and y_comp_middle > (height_line - ALT_ENTRE_LINHAS)):
-    #         row.append(text)
-    #     else:
-    #         if row != []:
-    #             tabela.append(row)
-    #         row = [text]
-    #     height_line = y_comp_middle
-    #     cv2.rectangle(draw_img, (c ['L'], c ['T']), (c ['R'], c ['B']), (0,0,255))
-    # tabela.append(row)
+    # Conta componentes e obtem coordenadas da tabela
+    num_lins, num_cols, componentes = rotula(all_lines)
+
+    print("=> Lendo células...")
+    
+    tabela = [[None for _ in range(num_cols)] for _ in range(num_lins)]
+    # Arranja componentes na estrutura da tabela
+    for c in componentes:
+        crop = img_bin[c['B']:c['T'], c['L']:c['R']]
+        crop = np.pad(crop, ((PAD_SIZE, PAD_SIZE), (PAD_SIZE, PAD_SIZE)), mode='constant', constant_values=255)
+        text = pytesseract.image_to_string(crop)
+        text = ''.join(ch for ch in text if ch.isprintable())
+        tabela[c["label_i"]][c["label_j"]] = text
+        cv2.rectangle(draw_img_components, (c ['L'], c ['T']), (c ['R'], c ['B']), (0,0,255))
+    
+    print("=> Montando tabela...")
 
     # Transforma em csv
-    filename = INPUT_IMAGE[:-4] + ".csv"
-    # with open(filename, 'w') as csvfile:
-    #     csvwriter = csv.writer(csvfile)
-    #     csvwriter.writerows(tabela)
+    filename = "_resultado.csv"
+    with open(filename, 'w') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerows(tabela)
 
-    # c = componentes[83]
-    # cv2.imwrite("crop.png", crop)
+    cv2.imwrite ('_8-tabela_encontrada.png', draw_img_components)
 
-    cv2.imwrite ('_6-componentes.png', draw_img)
+    print("_____________________ FIM ______________________")
     
     cv2.waitKey ()
     cv2.destroyAllWindows ()
