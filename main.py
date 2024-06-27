@@ -13,9 +13,6 @@ import csv
 import pytesseract
 import page_skew_corrector
 
-# increase the recursion limit for floodfill
-sys.setrecursionlimit(10**6)
-
 #===============================================================================
 
 INPUT_IMAGE =  './radon/3.png'
