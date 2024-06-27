@@ -1,4 +1,3 @@
-
 import cv2
 import page_skew_corrector
 input_image = 'amostras/6.jpg'
