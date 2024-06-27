@@ -1,7 +1,7 @@
 #===============================================================================
-# Trabalho 5 - Chroma Key
+# SPREADSHEET READER
 #-------------------------------------------------------------------------------
-# Autor: Gustavo Fardo Armênio
+# Autores: Gustavo Fardo Armênio, Lucas Walger do Nascimento e Thais Say de Carvalho
 # Universidade Tecnológica Federal do Paraná
 #===============================================================================
 
