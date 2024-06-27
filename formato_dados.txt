@@ -1,2 +1,0 @@
-Customizações das tabelas: Largura variada entre colunas, altura variada de linhas, tamanho de fonte variado, ausencia ou presença de linhas separadoras, 
-células mescladas, USAR SEMPRE A MESMA FONTE (ARIAL), SÍMBOLOS para complexidade
